@@ -25,6 +25,9 @@ const SEVEN_ZIP = process.env.SEVEN_ZIP_PATH || "7z";
 const OTC2OTF = `otc2otf`;
 const TTFAUTOHINT = process.env.TTFAUTOHINT_PATH || "ttfautohint";
 
+const GLYPH_SCALE_Y = 0.9;
+const GLYPH_SCALE_X = 1.0;
+
 const TTC_BUNDLE = [
 	NODEJS,
 	`--max-old-space-size=16384`,
@@ -369,15 +372,31 @@ const Pass1 = file.make(
 	}
 );
 
+const Pass1Scaled = file.make(
+	(family, region, style) => `${BUILD}/pass1-scaled/${family}-${region}-${style}.ttf`,
+	async (t, out, family, region, style) => {
+		const [pass1] = await t.need(Pass1(family, region, style), de(out.dir));
+
+		// Python 스크립트 호출
+		await run("python3", "make/scale-height.py",
+			pass1.full,
+			out.full,
+			String(GLYPH_SCALE_Y),
+			String(GLYPH_SCALE_X)
+		);
+	}
+);
+
 const Pass1Hinted = file.make(
 	(family, region, style) => `${BUILD}/pass1-hinted/${family}-${region}-${style}.ttf`,
 	async (t, out, family, region, style) => {
-		const [pass1] = await t.need(
-			Pass1(family, region, style),
+		// Pass1 대신 Pass1Scaled 사용
+		const [pass1scaled] = await t.need(
+			Pass1Scaled(family, region, style),  // ← 변경!
 			CheckTtfAutoHintExists,
 			de(out.dir)
 		);
-		await run("ttfautohint", pass1.full, out.full);
+		await run("ttfautohint", pass1scaled.full, out.full);
 	}
 );
 
@@ -395,7 +414,7 @@ const ProdUnhinted = file.make(
 	(family, region, style) => `${OUT}/TTF-Unhinted/${PREFIX}${family}${region}-${style}.ttf`,
 	(t, out, family, region, style) =>
 		MakeProd(t, out, family, region, style, {
-			Pass1: (w, f, r, s) => Pass1(f, r, s),
+			Pass1: (w, f, r, s) => Pass1Scaled(f, r, s),  // ← Pass1 대신 Pass1Scaled
 			Kanji: (w, r, s) => Kanji0(r, s),
 			Hangul: (w, r, s) => Hangul0(r, s)
 		})
